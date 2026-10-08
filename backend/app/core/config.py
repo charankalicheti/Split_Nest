@@ -2,11 +2,31 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    database_url: str = "postgresql+psycopg://split_money:local_dev_password@localhost:5432/split_money"
-    secret_key: str = "replace-this-development-key"
-    access_token_expire_minutes: int = 30
+    APP_NAME: str = "Split Money API"
+    APP_VERSION: str = "1.0.0"
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    DATABASE_URL: str
+
+    JWT_SECRET_KEY: str
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
+    CORS_ORIGINS: str = (
+        "http://localhost:5173,http://localhost:3000"
+    )
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra="ignore"
+    )
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [
+            origin.strip()
+            for origin in self.CORS_ORIGINS.split(",")
+            if origin.strip()
+        ]
 
 
 settings = Settings()
