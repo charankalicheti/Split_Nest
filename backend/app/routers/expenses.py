@@ -1,17 +1,17 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.dependencies.auth import get_current_user
-from app.models.user import User
 from app.schemas.expense import (
     ExpenseCreate,
     ExpenseResponse,
 )
 from app.services.expense_service import (
     create_expense,
+    delete_expense,
     get_expense,
     get_group_expenses,
+    update_expense,
 )
 
 
@@ -30,12 +30,11 @@ def add_expense(
     group_id: int,
     expense_data: ExpenseCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     return create_expense(
         db=db,
         group_id=group_id,
-        current_user_id=current_user.id,
+        paid_by_member_id=expense_data.paid_by,
         expense_data=expense_data,
     )
 
@@ -47,12 +46,10 @@ def add_expense(
 def list_expenses(
     group_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     return get_group_expenses(
         db=db,
         group_id=group_id,
-        current_user_id=current_user.id,
     )
 
 
@@ -63,10 +60,36 @@ def list_expenses(
 def expense_details(
     expense_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     return get_expense(
         db=db,
         expense_id=expense_id,
-        current_user_id=current_user.id,
     )
+
+
+@router.put(
+    "/{expense_id}",
+    response_model=ExpenseResponse,
+)
+def edit_expense(
+    expense_id: int,
+    expense_data: ExpenseCreate,
+    db: Session = Depends(get_db),
+):
+    return update_expense(
+        db=db,
+        expense_id=expense_id,
+        expense_data=expense_data,
+    )
+
+
+@router.delete(
+    "/{expense_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def remove_expense(
+    expense_id: int,
+    db: Session = Depends(get_db),
+):
+    delete_expense(db=db, expense_id=expense_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

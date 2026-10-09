@@ -8,8 +8,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.dependencies.auth import get_current_user
-from app.models.user import User
 from app.services.balance_service import (
     get_group_balances,
     get_settlement_suggestions,
@@ -26,7 +24,8 @@ router = APIRouter(
 # They can later be moved into app/schemas/balance.py.
 
 class MemberBalanceResponse(BaseModel):
-    user_id: int
+    member_id: int
+    name: str
     total_paid: Decimal
     total_share: Decimal
     total_settlements_sent: Decimal
@@ -66,7 +65,6 @@ class SettlementSuggestionsResponse(BaseModel):
 def read_group_balances(
     group_id: Annotated[int, Path(gt=0)],
     db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
 ):
     """
     Return each member's balance.
@@ -78,7 +76,6 @@ def read_group_balances(
     return get_group_balances(
         db=db,
         group_id=group_id,
-        current_user_id=current_user.id,
     )
 
 
@@ -90,11 +87,9 @@ def read_group_balances(
 def read_settlement_suggestions(
     group_id: Annotated[int, Path(gt=0)],
     db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
 ):
     """Return suggested payments without creating settlement records."""
     return get_settlement_suggestions(
         db=db,
         group_id=group_id,
-        current_user_id=current_user.id,
     )

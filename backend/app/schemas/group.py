@@ -1,7 +1,28 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+SUPPORTED_CURRENCIES = {
+    "AED": "UAE Dirham",
+    "AUD": "Australian Dollar",
+    "CAD": "Canadian Dollar",
+    "CHF": "Swiss Franc",
+    "EUR": "Euro",
+    "GBP": "British Pound",
+    "INR": "Indian Rupee",
+    "NZD": "New Zealand Dollar",
+    "SGD": "Singapore Dollar",
+    "USD": "US Dollar",
+}
+
+
+def validate_currency(value: str) -> str:
+    currency = value.upper()
+    if currency not in SUPPORTED_CURRENCIES:
+        raise ValueError("Select a supported currency.")
+    return currency
 
 
 # -----------------------------
@@ -19,23 +40,56 @@ class GroupCreate(BaseModel):
         default=None,
         max_length=500
     )
+    currency: str = "USD"
+    member_names: list[str] = Field(default_factory=lambda: ["Me"], min_length=1, max_length=100)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Group name cannot be empty.")
+        return value
+
+    @field_validator("currency")
+    @classmethod
+    def validate_group_currency(cls, value: str) -> str:
+        return validate_currency(value)
+
+    @field_validator("member_names")
+    @classmethod
+    def validate_member_names(cls, values: list[str]) -> list[str]:
+        names = [name.strip() for name in values]
+        if any(not name or len(name) > 100 for name in names):
+            raise ValueError("Participant names must contain 1 to 100 characters.")
+        if len({name.casefold() for name in names}) != len(names):
+            raise ValueError("Participant names must be unique within a group.")
+        return names
 
 
 # -----------------------------
-# Join Group
+# Add a participant
 # -----------------------------
 
-class GroupJoin(BaseModel):
-    group_id: int
+class GroupMemberCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Participant name cannot be empty.")
+        return value
 
 
 # -----------------------------
-# User information
-# Used when returning members
+# Participant information
 # -----------------------------
 
 class GroupMemberResponse(BaseModel):
-    user_id: int
+    id: int
+    name: str
     joined_at: datetime
 
     model_config = ConfigDict(
@@ -51,7 +105,7 @@ class GroupResponse(BaseModel):
     id: int
     name: str
     description: str | None
-    created_by: int
+    currency: str
     created_at: datetime
 
     model_config = ConfigDict(
@@ -67,9 +121,9 @@ class GroupDetailResponse(BaseModel):
     id: int
     name: str
     description: str | None
-    created_by: int
+    currency: str
     created_at: datetime
-    members: list[GroupMemberResponse] = []
+    members: list[GroupMemberResponse] = Field(default_factory=list)
 
     model_config = ConfigDict(
         from_attributes=True

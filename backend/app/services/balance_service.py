@@ -37,12 +37,7 @@ def _as_money(value: Decimal | None) -> Decimal:
     return value.quantize(CENT)
 
 
-def _get_authorized_group(
-    db: Session,
-    group_id: int,
-    current_user_id: int,
-) -> Group:
-    """Only members can access a group's financial information."""
+def _get_group(db: Session, group_id: int) -> Group:
     group = db.get(Group, group_id)
 
     if group is None:
@@ -51,26 +46,12 @@ def _get_authorized_group(
             detail="Group not found.",
         )
 
-    membership = db.execute(
-        select(GroupMember.user_id).where(
-            GroupMember.group_id == group_id,
-            GroupMember.user_id == current_user_id,
-        )
-    ).first()
-
-    if membership is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You must belong to this group to view its balances.",
-        )
-
     return group
 
 
 def get_group_balances(
     db: Session,
     group_id: int,
-    current_user_id: int,
 ) -> dict:
     """
     Return each member's financial position.
@@ -81,24 +62,24 @@ def get_group_balances(
     net = expenses paid - personal shares
           + settlements sent - settlements received
     """
-    group = _get_authorized_group(db, group_id, current_user_id)
+    group = _get_group(db, group_id)
 
-    member_ids = db.scalars(
-        select(GroupMember.user_id)
+    members = db.scalars(
+        select(GroupMember)
         .where(GroupMember.group_id == group_id)
-        .distinct()
-        .order_by(GroupMember.user_id)
+        .order_by(GroupMember.id)
     ).all()
 
     balances = {
-        user_id: {
-            "user_id": user_id,
+        member.id: {
+            "member_id": member.id,
+            "name": member.name,
             "total_paid": ZERO,
             "total_share": ZERO,
             "total_settlements_sent": ZERO,
             "total_settlements_received": ZERO,
         }
-        for user_id in member_ids
+        for member in members
     }
 
     # Sum expenses paid by each member.
@@ -114,7 +95,7 @@ def get_group_balances(
     # Join through Expense because each split belongs to an expense.
     share_totals = db.execute(
         select(
-            ExpenseSplit.user_id,
+            ExpenseSplit.member_id,
             func.sum(ExpenseSplit.amount),
         )
         .join(
@@ -122,7 +103,7 @@ def get_group_balances(
             Expense.id == ExpenseSplit.expense_id,
         )
         .where(Expense.group_id == group_id)
-        .group_by(ExpenseSplit.user_id)
+        .group_by(ExpenseSplit.member_id)
     ).all()
 
     sent_totals = db.execute(
@@ -144,17 +125,17 @@ def get_group_balances(
     ).all()
 
     def assign_totals(rows, field: str) -> None:
-        for user_id, amount in rows:
-            if user_id not in balances:
+        for member_id, amount in rows:
+            if member_id not in balances:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=(
-                        "Financial records reference a user "
+                        "Financial records reference a participant "
                         "outside the group membership records."
                     ),
                 )
 
-            balances[user_id][field] = _as_money(amount)
+            balances[member_id][field] = _as_money(amount)
 
     assign_totals(expense_totals, "total_paid")
     assign_totals(share_totals, "total_share")
@@ -220,7 +201,6 @@ def get_group_balances(
 def get_settlement_suggestions(
     db: Session,
     group_id: int,
-    current_user_id: int,
 ) -> dict:
     """
     Match members who owe money with members who should receive it.
@@ -232,7 +212,6 @@ def get_settlement_suggestions(
     balance_result = get_group_balances(
         db=db,
         group_id=group_id,
-        current_user_id=current_user_id,
     )
 
     debtors = []
@@ -244,21 +223,21 @@ def get_settlement_suggestions(
         if net_balance < ZERO:
             debtors.append(
                 {
-                    "user_id": member["user_id"],
+                    "member_id": member["member_id"],
                     "remaining": -net_balance,
                 }
             )
         elif net_balance > ZERO:
             creditors.append(
                 {
-                    "user_id": member["user_id"],
+                    "member_id": member["member_id"],
                     "remaining": net_balance,
                 }
             )
 
-    # Largest amounts first, with user ID as a stable tie-breaker.
-    debtors.sort(key=lambda item: (-item["remaining"], item["user_id"]))
-    creditors.sort(key=lambda item: (-item["remaining"], item["user_id"]))
+    # Largest amounts first, with member ID as a stable tie-breaker.
+    debtors.sort(key=lambda item: (-item["remaining"], item["member_id"]))
+    creditors.sort(key=lambda item: (-item["remaining"], item["member_id"]))
 
     suggestions = []
     debtor_index = 0
@@ -278,8 +257,8 @@ def get_settlement_suggestions(
 
         suggestions.append(
             {
-                "payer_id": debtor["user_id"],
-                "payee_id": creditor["user_id"],
+                "payer_id": debtor["member_id"],
+                "payee_id": creditor["member_id"],
                 "amount": _as_money(amount),
             }
         )

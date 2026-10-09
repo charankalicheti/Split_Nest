@@ -36,12 +36,12 @@ class SettlementCreate(BaseModel):
 
     payer_id: int = Field(
         gt=0,
-        description="User ID of the member sending money.",
+        description="ID of the participant sending money.",
     )
 
     payee_id: int = Field(
         gt=0,
-        description="User ID of the member receiving money.",
+        description="ID of the participant receiving money.",
     )
 
     amount: SettlementAmount
@@ -84,6 +84,6 @@ class SettlementResponse(BaseModel):
     amount: SettlementAmount
     currency: str = Field(pattern=r"^[A-Z]{3}$")
     note: str | None
-    created_by: int
+    created_by: int = Field(description="Participant ID that recorded the payment.")
     idempotency_key: UUID
     created_at: datetime

@@ -13,19 +13,19 @@ def round_money(amount: Decimal) -> Decimal:
 
 def calculate_equal_split(
     total_amount: Decimal,
-    user_ids: list[int],
+    member_ids: list[int],
 ) -> dict[int, Decimal]:
 
     if total_amount <= 0:
         raise ValueError("Total amount must be greater than zero.")
 
-    if not user_ids:
-        raise ValueError("At least one user is required.")
+    if not member_ids:
+        raise ValueError("At least one participant is required.")
 
-    number_of_users = len(user_ids)
+    number_of_members = len(member_ids)
 
     base_share = (
-        total_amount / Decimal(number_of_users)
+        total_amount / Decimal(number_of_members)
     ).quantize(
         TWO_PLACES,
         rounding=ROUND_DOWN
@@ -33,20 +33,20 @@ def calculate_equal_split(
 
     remaining = round_money(
         total_amount - (
-            base_share * number_of_users
+            base_share * number_of_members
         )
     )
 
     splits: dict[int, Decimal] = {}
 
-    for user_id in user_ids:
+    for member_id in member_ids:
         share = base_share
 
         if remaining >= TWO_PLACES:
             share += TWO_PLACES
             remaining -= TWO_PLACES
 
-        splits[user_id] = share
+        splits[member_id] = share
 
     return splits
 
@@ -62,11 +62,11 @@ def validate_custom_split(
     if not splits:
         raise ValueError("At least one split is required.")
 
-    for user_id, amount in splits.items():
+    for member_id, amount in splits.items():
 
         if amount < 0:
             raise ValueError(
-                f"Split amount for user {user_id} "
+                f"Split amount for participant {member_id} "
                 "cannot be negative."
             )
 

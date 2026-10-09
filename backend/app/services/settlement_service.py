@@ -10,34 +10,21 @@ from sqlalchemy.orm import Session
 from app.models.group import Group
 from app.models.group_member import GroupMember
 from app.models.settlement import Settlement
+from app.schemas.group import SUPPORTED_CURRENCIES
 from app.schemas.settlement import SettlementCreate
 
 
 def _require_group_member(
     db: Session,
     group_id: int,
-    user_id: int,
 ) -> Group:
-    """Check that the group exists and the user belongs to it."""
+    """Check that the group exists."""
     group = db.get(Group, group_id)
 
     if group is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Group not found.",
-        )
-
-    membership = db.execute(
-        select(GroupMember.user_id).where(
-            GroupMember.group_id == group_id,
-            GroupMember.user_id == user_id,
-        )
-    ).first()
-
-    if membership is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You must belong to this group.",
         )
 
     return group
@@ -87,7 +74,6 @@ def create_settlement(
     db: Session,
     group_id: int,
     payload: SettlementCreate,
-    current_user_id: int,
 ) -> Settlement:
     """
     Record a completed repayment.
@@ -98,14 +84,7 @@ def create_settlement(
     group = _require_group_member(
         db=db,
         group_id=group_id,
-        user_id=current_user_id,
     )
-
-    if payload.payer_id != current_user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only record payments that you made.",
-        )
 
     # The schema already validates these conditions.
     # Check again here to protect the business logic.
@@ -134,7 +113,7 @@ def create_settlement(
     existing = _find_existing_settlement(
         db=db,
         group_id=group_id,
-        created_by=current_user_id,
+        created_by=payload.payer_id,
         idempotency_key=submission_key,
     )
 
@@ -143,9 +122,9 @@ def create_settlement(
 
     participant_ids = set(
         db.scalars(
-            select(GroupMember.user_id).where(
+            select(GroupMember.id).where(
                 GroupMember.group_id == group_id,
-                GroupMember.user_id.in_(
+                GroupMember.id.in_(
                     [payload.payer_id, payload.payee_id]
                 ),
             )
@@ -160,11 +139,10 @@ def create_settlement(
 
     currency = group.currency
 
-    # This version supports the two-decimal currencies discussed earlier.
-    if currency not in {"INR", "USD"}:
+    if currency not in SUPPORTED_CURRENCIES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Settlement currency must be INR or USD.",
+            detail="Settlement currency is not supported.",
         )
 
     settlement = Settlement(
@@ -174,7 +152,7 @@ def create_settlement(
         amount=amount,
         currency=currency,
         note=payload.note,
-        created_by=current_user_id,
+        created_by=payload.payer_id,
         idempotency_key=submission_key,
     )
 
@@ -190,7 +168,7 @@ def create_settlement(
         existing = _find_existing_settlement(
             db=db,
             group_id=group_id,
-            created_by=current_user_id,
+            created_by=payload.payer_id,
             idempotency_key=submission_key,
         )
 
@@ -216,7 +194,6 @@ def create_settlement(
 def list_group_settlements(
     db: Session,
     group_id: int,
-    current_user_id: int,
     offset: int = 0,
     limit: int = 50,
 ) -> list[Settlement]:
@@ -224,7 +201,6 @@ def list_group_settlements(
     _require_group_member(
         db=db,
         group_id=group_id,
-        user_id=current_user_id,
     )
 
     if offset < 0:

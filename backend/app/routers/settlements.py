@@ -6,8 +6,6 @@ from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.dependencies.auth import get_current_user
-from app.models.user import User
 from app.schemas.settlement import (
     SettlementCreate,
     SettlementResponse,
@@ -33,10 +31,9 @@ def record_settlement(
     group_id: Annotated[int, Path(gt=0)],
     payload: SettlementCreate,
     db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
 ):
     """
-    Record a payment made by the authenticated user.
+    Record a completed payment between group participants.
 
     Reuse the same idempotency key when retrying the same submission.
     An identical retry returns the original settlement.
@@ -45,7 +42,6 @@ def record_settlement(
         db=db,
         group_id=group_id,
         payload=payload,
-        current_user_id=current_user.id,
     )
 
 
@@ -57,7 +53,6 @@ def record_settlement(
 def read_settlements(
     group_id: Annotated[int, Path(gt=0)],
     db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ):
@@ -65,7 +60,6 @@ def read_settlements(
     return list_group_settlements(
         db=db,
         group_id=group_id,
-        current_user_id=current_user.id,
         offset=offset,
         limit=limit,
     )

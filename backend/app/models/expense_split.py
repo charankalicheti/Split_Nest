@@ -1,6 +1,12 @@
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Numeric,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -8,30 +14,28 @@ from app.core.database import Base
 
 class ExpenseSplit(Base):
     __tablename__ = "expense_splits"
-
-    id: Mapped[int] = mapped_column(
-        primary_key=True,
-        index=True
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_expense_splits_positive_amount"),
+        UniqueConstraint(
+            "expense_id",
+            "member_id",
+            name="uq_expense_split_member",
+        ),
+        Index("ix_expense_splits_member_id", "member_id"),
     )
 
+    id: Mapped[int] = mapped_column(primary_key=True)
     expense_id: Mapped[int] = mapped_column(
         ForeignKey("expenses.id", ondelete="CASCADE"),
         nullable=False,
-        index=True
     )
-
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id"),
+    member_id: Mapped[int] = mapped_column(
+        ForeignKey("group_members.id", ondelete="RESTRICT"),
         nullable=False,
-        index=True
     )
-
     amount: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2),
-        nullable=False
+        Numeric(14, 2, asdecimal=True),
+        nullable=False,
     )
 
-    expense = relationship(
-        "Expense",
-        back_populates="splits"
-    )
+    expense = relationship("Expense", back_populates="splits")

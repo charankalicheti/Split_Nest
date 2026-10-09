@@ -1,224 +1,78 @@
-
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.expense import Expense
 from app.models.group import Group
 from app.models.group_member import GroupMember
+from app.models.settlement import Settlement
 from app.schemas.group import GroupCreate
 
 
-# --------------------------------------------------
-# Create Group
-# --------------------------------------------------
-
-def create_group(
-    db: Session,
-    group_data: GroupCreate,
-    user_id: int
-):
-    # Create the group
-    new_group = Group(
-        name=group_data.name,
+def create_group(db: Session, group_data: GroupCreate) -> Group:
+    group = Group(
+        name=group_data.name.strip(),
         description=group_data.description,
-        created_by=user_id
+        currency=group_data.currency,
     )
-
-    db.add(new_group)
+    group.members = [
+        GroupMember(name=name)
+        for name in group_data.member_names
+    ]
+    db.add(group)
     db.commit()
-    db.refresh(new_group)
-
-    # Automatically add the creator as a group member
-    creator_member = GroupMember(
-        group_id=new_group.id,
-        user_id=user_id
-    )
-
-    db.add(creator_member)
-    db.commit()
-
-    return new_group
-
-
-# --------------------------------------------------
-# Join Group
-# --------------------------------------------------
-
-def join_group(
-    db: Session,
-    group_id: int,
-    user_id: int
-):
-    # Check whether group exists
-    group = (
-        db.query(Group)
-        .filter(Group.id == group_id)
-        .first()
-    )
-
-    if not group:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Group not found"
-        )
-
-    # Check whether user is already a member
-    existing_member = (
-        db.query(GroupMember)
-        .filter(
-            GroupMember.group_id == group_id,
-            GroupMember.user_id == user_id
-        )
-        .first()
-    )
-
-    if existing_member:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User is already a member of this group"
-        )
-
-    # Add user to group
-    new_member = GroupMember(
-        group_id=group_id,
-        user_id=user_id
-    )
-
-    db.add(new_member)
-    db.commit()
-
-    return group
-
-
-# --------------------------------------------------
-# Get Groups of Logged-in User
-# --------------------------------------------------
-
-def get_user_groups(
-    db: Session,
-    user_id: int
-):
-    groups = (
-        db.query(Group)
-        .join(
-            GroupMember,
-            Group.id == GroupMember.group_id
-        )
-        .filter(
-            GroupMember.user_id == user_id
-        )
-        .order_by(Group.created_at.desc())
-        .all()
-    )
-
-    return groups
-
-
-# --------------------------------------------------
-# Get Group Details
-# --------------------------------------------------
-
-def get_group_details(
-    db: Session,
-    group_id: int,
-    user_id: int
-):
-    # Check group exists
-    group = (
-        db.query(Group)
-        .filter(Group.id == group_id)
-        .first()
-    )
-
-    if not group:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Group not found"
-        )
-
-    # Check whether requesting user is a member
-    membership = (
-        db.query(GroupMember)
-        .filter(
-            GroupMember.group_id == group_id,
-            GroupMember.user_id == user_id
-        )
-        .first()
-    )
-
-    if not membership:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not a member of this group"
-        )
-
-    return group
-
-
-# --------------------------------------------------
-# Add Member
-# --------------------------------------------------
-
-def add_member(
-    db: Session,
-    group_id: int,
-    new_user_id: int,
-    requesting_user_id: int
-):
-    # Check group exists
-    group = (
-        db.query(Group)
-        .filter(Group.id == group_id)
-        .first()
-    )
-
-    if not group:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Group not found"
-        )
-
-    # Check whether requesting user belongs to group
-    requesting_member = (
-        db.query(GroupMember)
-        .filter(
-            GroupMember.group_id == group_id,
-            GroupMember.user_id == requesting_user_id
-        )
-        .first()
-    )
-
-    if not requesting_member:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not a member of this group"
-        )
-
-    # Check whether new user is already a member
-    existing_member = (
-        db.query(GroupMember)
-        .filter(
-            GroupMember.group_id == group_id,
-            GroupMember.user_id == new_user_id
-        )
-        .first()
-    )
-
-    if existing_member:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User is already a member of this group"
-        )
-
-    # Add new member
-    new_member = GroupMember(
-        group_id=group_id,
-        user_id=new_user_id
-    )
-
-    db.add(new_member)
-    db.commit()
-
-    # Return updated group
     db.refresh(group)
-
     return group
+
+
+def get_groups(db: Session) -> list[Group]:
+    return list(
+        db.scalars(select(Group).order_by(Group.created_at.desc())).all()
+    )
+
+
+def get_group_details(db: Session, group_id: int) -> Group:
+    group = db.get(Group, group_id)
+    if group is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Group not found.",
+        )
+    return group
+
+
+def add_member(db: Session, group_id: int, name: str) -> Group:
+    group = get_group_details(db, group_id)
+    existing_names = db.scalars(
+        select(GroupMember.name).where(GroupMember.group_id == group_id)
+    ).all()
+    if any(existing_name.casefold() == name.casefold() for existing_name in existing_names):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A participant with this name is already in the group.",
+        )
+
+    db.add(GroupMember(group_id=group_id, name=name))
+    db.commit()
+    db.refresh(group)
+    return group
+
+
+def delete_group(db: Session, group_id: int) -> None:
+    group = get_group_details(db, group_id)
+
+    settlements = db.scalars(
+        select(Settlement).where(Settlement.group_id == group_id)
+    ).all()
+    expenses = db.scalars(
+        select(Expense).where(Expense.group_id == group_id)
+    ).all()
+
+    for settlement in settlements:
+        db.delete(settlement)
+    for expense in expenses:
+        db.delete(expense)
+
+    db.flush()
+    db.delete(group)
+    db.commit()

@@ -7,12 +7,8 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str
 
-    JWT_SECRET_KEY: str
-    JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
-
     CORS_ORIGINS: str = (
-        "http://localhost:5173,http://localhost:3000"
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
     )
 
     model_config = SettingsConfigDict(
@@ -22,11 +18,19 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> list[str]:
-        return [
+        origins = [
             origin.strip()
             for origin in self.CORS_ORIGINS.split(",")
             if origin.strip()
         ]
+        local_origin_pairs = (
+            ("http://localhost:5173", "http://127.0.0.1:5173"),
+            ("http://127.0.0.1:5173", "http://localhost:5173"),
+        )
+        for configured_origin, loopback_alias in local_origin_pairs:
+            if configured_origin in origins and loopback_alias not in origins:
+                origins.append(loopback_alias)
+        return origins
 
 
 settings = Settings()

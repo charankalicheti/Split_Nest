@@ -2,105 +2,111 @@ from decimal import Decimal
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
+from app.core.database import Base
 from app.schemas.expense import ExpenseCreate
-from app.services.expense_service import (
-    ExpenseValidationError,
-    allocate_equal_splits,
-    resolve_expense_splits,
-)
+from app.schemas.group import GroupCreate
+from app.services.expense_service import create_expense
+from app.services.group_service import create_group
 
 
-def test_equal_split_distributes_remainder_cents_deterministically():
-    splits = allocate_equal_splits(Decimal("10.00"), [9, 3, 5])
+@pytest.fixture
+def db():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        yield session
+    Base.metadata.drop_all(engine)
+    engine.dispose()
 
-    assert splits == [
-        (3, Decimal("3.34")),
-        (5, Decimal("3.33")),
-        (9, Decimal("3.33")),
+
+def test_equal_expense_splits_evenly_between_named_participants(db):
+    group = create_group(
+        db,
+        GroupCreate(name="Trip", member_names=["Alex", "Sam", "Jo"]),
+    )
+    payer = group.members[0]
+
+    expense = create_expense(
+        db,
+        group.id,
+        payer.id,
+        ExpenseCreate(
+            description="Dinner",
+            amount=Decimal("10.00"),
+            paid_by=payer.id,
+            split_type="equal",
+        ),
+    )
+
+    assert expense.paid_by == payer.id
+    assert [split.member_id for split in expense.splits] == [
+        member.id for member in group.members
     ]
-    assert sum((amount for _, amount in splits), Decimal("0")) == Decimal("10.00")
+    assert [split.amount for split in expense.splits] == [
+        Decimal("3.34"),
+        Decimal("3.33"),
+        Decimal("3.33"),
+    ]
 
 
-def test_equal_split_supports_more_than_four_members():
-    splits = allocate_equal_splits(Decimal("100.00"), list(range(1, 101)))
+def test_custom_split_requires_exact_amounts_and_group_participants(db):
+    group = create_group(
+        db,
+        GroupCreate(name="Trip", member_names=["Alex", "Sam"]),
+    )
+    alex, sam = group.members
 
-    assert len(splits) == 100
-    assert sum((amount for _, amount in splits), Decimal("0")) == Decimal("100.00")
-
-
-def test_equal_split_rejects_empty_members():
-    with pytest.raises(ExpenseValidationError):
-        allocate_equal_splits(Decimal("10.00"), [])
-
-
-def test_custom_split_requires_members_and_unique_member_ids():
     with pytest.raises(ValidationError):
         ExpenseCreate(
             description="Dinner",
             amount=Decimal("24.00"),
-            paid_by_user_id=1,
+            paid_by=alex.id,
             split_type="custom",
         )
 
-    with pytest.raises(ValidationError):
+    expense = create_expense(
+        db,
+        group.id,
+        alex.id,
         ExpenseCreate(
             description="Dinner",
             amount=Decimal("24.00"),
-            paid_by_user_id=1,
+            paid_by=alex.id,
             split_type="custom",
             splits=[
-                {"user_id": 2, "amount": "12.00"},
-                {"user_id": 2, "amount": "12.00"},
+                {"member_id": sam.id, "amount": "14.50"},
+                {"member_id": alex.id, "amount": "9.50"},
             ],
+        ),
+    )
+
+    assert {split.member_id: split.amount for split in expense.splits} == {
+        alex.id: Decimal("9.50"),
+        sam.id: Decimal("14.50"),
+    }
+
+
+def test_expense_requires_a_group_participant_as_payer(db):
+    group = create_group(
+        db,
+        GroupCreate(name="Trip", member_names=["Alex"]),
+    )
+
+    with pytest.raises(Exception, match="payer must be a participant"):
+        create_expense(
+            db,
+            group.id,
+            999,
+            ExpenseCreate(
+                description="Dinner",
+                amount=Decimal("10.00"),
+                paid_by=999,
+                split_type="equal",
+            ),
         )
-
-
-def test_custom_split_amounts_must_match_expense_total():
-    expense = ExpenseCreate(
-        description="Dinner",
-        amount=Decimal("24.00"),
-        paid_by_user_id=1,
-        split_type="custom",
-        splits=[
-            {"user_id": 2, "amount": "10.00"},
-            {"user_id": 3, "amount": "14.01"},
-        ],
-    )
-
-    with pytest.raises(ExpenseValidationError, match="add up"):
-        resolve_expense_splits(expense, [1, 2, 3])
-
-
-def test_custom_split_preserves_exact_decimal_allocations():
-    expense = ExpenseCreate(
-        description="Dinner",
-        amount=Decimal("24.00"),
-        paid_by_user_id=1,
-        split_type="custom",
-        splits=[
-            {"user_id": 3, "amount": "14.50"},
-            {"user_id": 2, "amount": "9.50"},
-        ],
-    )
-
-    assert resolve_expense_splits(expense, [1, 2, 3]) == [
-        (2, Decimal("9.50")),
-        (3, Decimal("14.50")),
-    ]
-
-
-def test_custom_split_rejects_non_group_members():
-    expense = ExpenseCreate(
-        description="Dinner",
-        amount=Decimal("24.00"),
-        paid_by_user_id=1,
-        split_type="custom",
-        splits=[{"user_id": 4, "amount": "24.00"}],
-    )
-
-    with pytest.raises(ExpenseValidationError, match="belong to this group"):
-        resolve_expense_splits(expense, [1, 2, 3])
 
 
 def test_expense_amount_rejects_more_than_two_decimal_places():
@@ -108,5 +114,6 @@ def test_expense_amount_rejects_more_than_two_decimal_places():
         ExpenseCreate(
             description="Dinner",
             amount=Decimal("1.001"),
-            paid_by_user_id=1,
+            paid_by=1,
+            split_type="equal",
         )

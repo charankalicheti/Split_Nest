@@ -1,12 +1,17 @@
 from decimal import Decimal
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ExpenseSplitCreate(BaseModel):
-    user_id: int
-    amount: Decimal = Field(gt=0)
+    member_id: int
+    amount: Decimal = Field(
+        gt=0,
+        max_digits=14,
+        decimal_places=2,
+        allow_inf_nan=False,
+    )
 
 
 class ExpenseCreate(BaseModel):
@@ -15,7 +20,13 @@ class ExpenseCreate(BaseModel):
         max_length=255
     )
 
-    amount: Decimal = Field(gt=0)
+    amount: Decimal = Field(
+        gt=0,
+        max_digits=14,
+        decimal_places=2,
+        allow_inf_nan=False,
+    )
+    paid_by: int = Field(gt=0)
 
     split_type: str
 
@@ -34,12 +45,20 @@ class ExpenseCreate(BaseModel):
 
         return value
 
+    @model_validator(mode="after")
+    def validate_splits(self) -> "ExpenseCreate":
+        if self.split_type == "custom" and not self.splits:
+            raise ValueError("Custom split requires splits.")
+        if self.split_type == "equal" and self.splits:
+            raise ValueError("Equal split does not accept explicit splits.")
+        return self
+
 
 class ExpenseSplitResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    user_id: int
+    member_id: int
     amount: Decimal
 
 

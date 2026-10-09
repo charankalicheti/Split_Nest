@@ -30,6 +30,10 @@ class Settlement(Base):
             name="ck_settlements_positive_amount",
         ),
         CheckConstraint(
+            "length(currency) = 3 AND currency = upper(currency)",
+            name="ck_settlements_currency_code",
+        ),
+        CheckConstraint(
             "payer_id <> payee_id",
             name="ck_settlements_different_participants",
         ),
@@ -71,14 +75,14 @@ class Settlement(Base):
     # Member who sends the repayment.
     payer_id = Column(
         Integer,
-        ForeignKey("users.id", ondelete="RESTRICT"),
+        ForeignKey("group_members.id", ondelete="RESTRICT"),
         nullable=False,
     )
 
     # Member who receives the repayment.
     payee_id = Column(
         Integer,
-        ForeignKey("users.id", ondelete="RESTRICT"),
+        ForeignKey("group_members.id", ondelete="RESTRICT"),
         nullable=False,
     )
 
@@ -100,10 +104,10 @@ class Settlement(Base):
         nullable=True,
     )
 
-    # Authenticated user who recorded this repayment.
+    # Participant who recorded this repayment.
     created_by = Column(
         Integer,
-        ForeignKey("users.id", ondelete="RESTRICT"),
+        ForeignKey("group_members.id", ondelete="RESTRICT"),
         nullable=False,
     )
 
