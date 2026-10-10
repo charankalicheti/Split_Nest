@@ -1,3 +1,6 @@
+Doplyment run command : sudo systemctl start split-nest-api
+sudo systemctl start nginx
+----------------------------------------------------------------------------
 # Split Money App
 
 A starter repository for a group expense-splitting application.
