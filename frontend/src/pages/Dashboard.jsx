@@ -121,6 +121,16 @@ function Dashboard() {
     (sum, expense) => sum + Number(expense.amount),
     0,
   ) || 0;
+  const spentByMember = useMemo(() => {
+    const totals = new Map();
+    activeGroup?.expenses.forEach((expense) => {
+      totals.set(
+        expense.paid_by,
+        (totals.get(expense.paid_by) || 0) + Number(expense.amount),
+      );
+    });
+    return totals;
+  }, [activeGroup]);
   const totalReceivable = activeGroup?.balances.members.reduce(
     (sum, member) => sum + Math.max(0, Number(member.net_balance)),
     0,
@@ -355,20 +365,20 @@ function Dashboard() {
 
               <article className="reference-panel members-panel" id="groups">
                 <div className="reference-panel-heading">
-                  <div><h2>Group members</h2><p>{activeGroup.members.length} people sharing expenses</p></div>
+                  <div><h2>Group members</h2><p>Trip spend paid by each person</p></div>
                   <button className="reference-inline-button" type="button" onClick={() => { setMemberForm({ group_id: String(activeGroup.id), name: "" }); setDialogError(""); setDialog("member"); }}>＋ Add person</button>
                 </div>
                 <div className="reference-member-list">
                   {activeGroup.members.map((member, index) => {
-                    const balance = Number(activeGroup.balances.members.find((item) => item.member_id === member.id)?.net_balance) || 0;
-                    const status = balance > 0 ? "gets back" : balance < 0 ? "owes" : "settled";
                     return <div className="reference-member" key={member.id}>
                       <span className={`reference-avatar avatar-${index % 4}`}>{member.name.slice(0, 1).toUpperCase()}</span>
                       <strong>{member.name}</strong>
-                      <span className={`reference-member-balance ${balance < 0 ? "owes" : ""}`}>
-                        <small>{status}</small>
-                        <b>{formatCurrency(Math.abs(balance), activeGroup.currency)}</b>
-                      </span>
+                      <div className="reference-member-financials">
+                        <span className="reference-member-spent">
+                          <small>trip spend</small>
+                          <b>{formatCurrency(spentByMember.get(member.id) || 0, activeGroup.currency)}</b>
+                        </span>
+                      </div>
                     </div>;
                   })}
                   {!activeGroup.members.length && <div className="reference-table-empty">Add a person to this group.</div>}

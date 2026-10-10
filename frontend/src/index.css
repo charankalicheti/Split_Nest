@@ -2089,27 +2089,25 @@ p {
   white-space: nowrap;
 }
 
-.reference-member-balance {
+.reference-member-financials {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reference-member-spent {
   display: grid;
-  min-width: 77px;
+  min-width: 65px;
   gap: 2px;
-  padding: 5px 7px;
-  border-radius: 8px;
-  background: #eaf8f1;
-  color: #07885e;
-  text-align: left;
+  color: #343149;
 }
 
-.reference-member-balance.owes {
-  background: #fff0ee;
-  color: #e2574e;
-}
-
-.reference-member-balance small {
+.reference-member-spent small {
+  color: #858196;
   font-size: 8px;
 }
 
-.reference-member-balance b {
+.reference-member-spent b {
   font-size: 9px;
 }
 
