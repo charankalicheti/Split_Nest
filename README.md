@@ -1,5 +1,11 @@
-Doplyment run command : sudo systemctl start split-nest-api
+Deplyment run command : 
+sudo systemctl start split-nest-api
 sudo systemctl start nginx
+
+Stop command :
+sudo systemctl stop split-nest-api
+sudo systemctl stop nginx
+
 ----------------------------------------------------------------------------
 # Split Money App
 
